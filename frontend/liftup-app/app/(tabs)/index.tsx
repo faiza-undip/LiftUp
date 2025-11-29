@@ -1,98 +1,112 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  TouchableOpacity,
+} from "react-native";
+import * as SecureStore from "expo-secure-store";
+import { useRouter } from "expo-router";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { useAuth } from "../context/AuthContext";
 
-export default function HomeScreen() {
+interface Placement {
+  id: string;
+  created_at: string;
+  weight_kg: number;
+  reps: number;
+  estimated_1rm: number;
+  rank_key: string;
+  exercises: { name: string };
+}
+
+export default function HomeScreen({ navigation }: any) {
+  const router = useRouter();
+  const { session } = useAuth();
+
+  const [placements, setPlacements] = useState<Placement[]>([]);
+
+  const loadPlacements = async () => {
+    const token = await SecureStore.getItemAsync("access_token");
+    const res = await fetch("http://localhost:4000/placements", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    setPlacements(json.placements || []);
+  };
+
+  useEffect(() => {
+    loadPlacements();
+  }, [session]);
+
+  const overallRankKey = placements[0]?.rank_key ?? "UNRANKED";
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={styles.container}>
+      <Text style={styles.title}>Your Rank</Text>
+      <Text style={styles.rank}>{overallRankKey.replace("_", " ")}</Text>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <View style={styles.card}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardTitle}>Placements</Text>
+          <TouchableOpacity onPress={() => router.push("/rank-ladder")}>
+            <Text style={styles.link}>View Ladder</Text>
+          </TouchableOpacity>
+        </View>
+
+        <FlatList
+          data={placements}
+          keyExtractor={(item) => item.id}
+          horizontal
+          renderItem={({ item }) => (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{item.exercises.name}</Text>
+              <Text style={styles.badgeSub}>
+                {item.rank_key.replace("_", " ")}
+              </Text>
+            </View>
+          )}
+        />
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => router.push("/calculator")}
+        >
+          <Text style={styles.buttonText}>Rank Exercises</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* History list can be another FlatList below */}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: { flex: 1, backgroundColor: "#050814", padding: 16 },
+  title: { color: "white", fontSize: 20, marginBottom: 4 },
+  rank: { color: "#C77DFF", fontSize: 26, marginBottom: 16 },
+  card: { backgroundColor: "#111827", borderRadius: 16, padding: 16 },
+  rowBetween: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  cardTitle: { color: "white", fontSize: 16 },
+  link: { color: "#5DD9E8" },
+  badge: {
+    backgroundColor: "#1F2937",
+    padding: 12,
+    borderRadius: 12,
+    marginRight: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  badgeText: { color: "white" },
+  badgeSub: { color: "#9CA3AF", fontSize: 12 },
+  button: {
+    marginTop: 12,
+    backgroundColor: "#4ECDC4",
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
   },
+  buttonText: { color: "#050814", fontWeight: "600" },
 });
