@@ -1,48 +1,77 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   Button,
-  Alert,
-  StyleSheet,
   TouchableOpacity,
+  StyleSheet,
 } from "react-native";
-import * as SecureStore from "expo-secure-store";
-import { useRouter } from "expo-router";
+import Animated, {
+  useSharedValue,
+  withSpring,
+  withTiming,
+  useAnimatedStyle,
+} from "react-native-reanimated";
 import ViewShot from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
+import * as SecureStore from "expo-secure-store";
+import { useLocalSearchParams } from "expo-router";
 
-import { RANKS } from "@/constants/ranks";
+import HexBadge from "@/components/hex-badge";
 
-const OG_EXERCISES = [
-  "Pull Ups",
-  "Push Ups",
-  "Bench Press",
-  "Squat",
-  "Deadlift",
-];
+export default function CalculatorScreen() {
+  const params = useLocalSearchParams();
 
-export default function CalculatorScreen({ navigation }: any) {
-  const router = useRouter();
+  const [exerciseId, setExerciseId] = useState<number | null>(null);
+  const [exerciseName, setExerciseName] = useState<string>("Pull Ups");
 
-  const [exerciseName, setExerciseName] = useState<string>(OG_EXERCISES[0]);
-  const [exerciseId, setExerciseId] = useState<number | null>(null); // set from search/lookup
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [result, setResult] = useState<any>(null);
-  const [captureRef, setCaptureRef] = useState<any>(null);
 
-  const onCalculate = async () => {
+  // --- REF FOR VIEWSHOT ---
+  const captureRef = useRef<ViewShot>(null);
+
+  // --- ANIMATION VALUES ---
+  const scale = useSharedValue(0.5);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (params.selectedId) {
+      setExerciseId(Number(params.selectedId));
+      setExerciseName(String(params.selectedName));
+    }
+  }, [params]);
+
+  const rankDef = result?.rank || null;
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  useEffect(() => {
+    if (rankDef) {
+      scale.value = 0.6;
+      opacity.value = 0;
+
+      scale.value = withSpring(1, { damping: 12, stiffness: 160 });
+      opacity.value = withTiming(1, { duration: 250 });
+    }
+  }, [rankDef]);
+
+  async function onCalculate() {
     if (!exerciseId) {
-      Alert.alert("Missing exercise", "Please choose an exercise.");
+      alert("Pick an exercise first");
       return;
     }
+
     if (
       !reps ||
       (!weight && exerciseName !== "Pull Ups" && exerciseName !== "Push Ups")
     ) {
-      Alert.alert("Missing fields", "Please fill required weight / reps.");
+      alert("Please fill all fields");
       return;
     }
 
@@ -60,71 +89,70 @@ export default function CalculatorScreen({ navigation }: any) {
         reps: Number(reps),
       }),
     });
+
     const json = await res.json();
+
     if (json.error) {
-      Alert.alert("Error", json.error);
-    } else {
-      setResult(json);
+      alert(json.error);
+      return;
+    }
+
+    setResult(json);
+  }
+
+  const handleShare = async () => {
+    if (captureRef.current && captureRef.current.capture) {
+      const uri = await captureRef.current.capture();
+      await Sharing.shareAsync(uri);
     }
   };
 
-  const onShare = async () => {
-    if (!captureRef) return;
-    const uri = await captureRef.capture();
-    await Sharing.shareAsync(uri);
-  };
-
-  const rankDef = result?.rank;
   const color = rankDef?.color ?? "#4ECDC4";
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Rank Exercises</Text>
+      <Text style={styles.title}>Rank Calculator</Text>
 
       <Text style={styles.label}>Exercise</Text>
-      {/* For now simple; can open ExerciseSearchScreen */}
-      <TouchableOpacity onPress={() => router.push("/exercise-search")}>
-        <Text style={styles.exercise}>{exerciseName}</Text>
-      </TouchableOpacity>
+      <Text style={styles.exercise}>{exerciseName}</Text>
 
       <Text style={styles.label}>Weight (kg)</Text>
       <TextInput
         style={styles.input}
-        keyboardType="numeric"
         value={weight}
         onChangeText={setWeight}
+        keyboardType="numeric"
         placeholder="0"
       />
 
       <Text style={styles.label}>Reps</Text>
       <TextInput
         style={styles.input}
-        keyboardType="numeric"
         value={reps}
         onChangeText={setReps}
+        keyboardType="numeric"
         placeholder="0"
       />
 
       <Button title="Calculate" onPress={onCalculate} />
 
       {rankDef && (
-        <ViewShot
-          ref={(ref) => setCaptureRef(ref)}
-          style={[
-            styles.resultCard,
-            { borderColor: color, backgroundColor: "#050814" },
-          ]}
-        >
-          <View style={[styles.badge, { backgroundColor: color }]}>
-            <Text style={styles.badgeIcon}>◆</Text>
-          </View>
-          <Text style={styles.resultText}>{rankDef.label}</Text>
-          <Text style={styles.resultSub}>
-            {exerciseName} – {weight || 0} kg × {reps} reps
-          </Text>
-          <TouchableOpacity style={styles.shareButton} onPress={onShare}>
-            <Text style={styles.shareText}>Share</Text>
-          </TouchableOpacity>
+        <ViewShot ref={captureRef}>
+          <Animated.View
+            style={[styles.resultCard, animatedStyle, { borderColor: color }]}
+          >
+            <HexBadge color={color} size={140} icon="◆" label={rankDef.label} />
+
+            <Text style={styles.rankLabel}>{rankDef.label}</Text>
+
+            <Text style={styles.resultSub}>
+              {exerciseName} — {weight || 0} kg × {reps} reps
+            </Text>
+
+            <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+              <Text style={styles.shareText}>Share</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </ViewShot>
       )}
     </View>
@@ -138,33 +166,34 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: "#111827",
     color: "white",
-    borderRadius: 8,
     padding: 10,
+    borderRadius: 8,
   },
-  exercise: { color: "white", paddingVertical: 8, fontSize: 16 },
+  exercise: { color: "white", fontSize: 16, marginTop: 4 },
   resultCard: {
     marginTop: 20,
     borderWidth: 2,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 20,
+    padding: 20,
     alignItems: "center",
+    backgroundColor: "#10131A",
   },
   badge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  badgeIcon: { color: "#050814", fontSize: 32 },
-  resultText: { color: "white", fontSize: 20, fontWeight: "600" },
-  resultSub: { color: "#9CA3AF", marginTop: 4, marginBottom: 12 },
+  badgeIcon: { color: "#050814", fontSize: 32, fontWeight: "bold" },
+  rankLabel: { color: "white", fontSize: 20, fontWeight: "600" },
+  resultSub: { color: "#9CA3AF", marginTop: 6 },
   shareButton: {
+    marginTop: 14,
     backgroundColor: "#4ECDC4",
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
+    padding: 10,
+    borderRadius: 10,
   },
   shareText: { color: "#050814", fontWeight: "600" },
 });
