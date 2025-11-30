@@ -53,6 +53,9 @@ export default {
       apiUrl: process.env.EXPO_PUBLIC_API_URL,
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
+      eas: {
+        projectId: "30846911-dd06-4f5a-86d8-9805dbf6e00e",
+      },
     },
   },
 };

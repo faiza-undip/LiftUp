@@ -14,9 +14,6 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/app/lib/supabase";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-
-import { CONFIG } from "./lib/config";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -42,33 +39,23 @@ interface Exercise {
   is_default: boolean;
 }
 
-interface Placement {
-  exercise_id: number;
-  rank_key: string;
-  performed_count: number;
+interface ExerciseWithRanking extends Exercise {
+  highestScore?: number;
+  latestPerformed?: string;
+  rankSortOrder?: number;
 }
 
-type SortType = "alphabetical" | "rank" | "performed";
-
-const RANK_ORDER: Record<string, number> = {
-  DIAMOND: 1,
-  PLATINUM: 2,
-  GOLD: 3,
-  SILVER: 4,
-  BRONZE: 5,
-  UNRANKED: 6,
-};
+type SortMode = "alphabetical" | "rank" | "performed";
 
 export default function ExerciseSearchScreen() {
   const router = useRouter();
 
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [filtered, setFiltered] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExerciseWithRanking[]>([]);
+  const [filtered, setFiltered] = useState<ExerciseWithRanking[]>([]);
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [slideAnim] = useState(new Animated.Value(SCREEN_HEIGHT));
-  const [sortType, setSortType] = useState<SortType>("alphabetical");
-  const [placements, setPlacements] = useState<Placement[]>([]);
+  const [sortMode, setSortMode] = useState<SortMode>("alphabetical");
 
   // Dynamically populated filter options from actual data
   const [categories, setCategories] = useState<string[]>([]);
@@ -81,19 +68,11 @@ export default function ExerciseSearchScreen() {
 
   useEffect(() => {
     loadExercises();
-    loadPlacements();
   }, []);
 
   useEffect(() => {
-    applyFilters();
-  }, [
-    query,
-    selectedCategories,
-    selectedBodyweight,
-    exercises,
-    sortType,
-    placements,
-  ]);
+    applyFiltersAndSort();
+  }, [query, selectedCategories, selectedBodyweight, exercises, sortMode]);
 
   useEffect(() => {
     if (showFilters) {
@@ -113,58 +92,93 @@ export default function ExerciseSearchScreen() {
   }, [showFilters]);
 
   async function loadExercises() {
-    const { data, error } = await supabase
+    // Get current user
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Fetch all exercises
+    const { data: exercisesData, error: exercisesError } = await supabase
       .from("exercises")
       .select("*")
       .order("name", { ascending: true });
 
-    if (!error && data) {
-      setExercises(data);
-      setFiltered(data);
-
-      // Extract unique categories from the data
-      const uniqueCategories = [
-        ...new Set(data.map((ex) => ex.category).filter(Boolean)),
-      ] as string[];
-      setCategories(uniqueCategories.sort());
-    } else if (error) {
-      console.error("Error loading exercises:", error);
+    if (exercisesError || !exercisesData) {
+      console.error("Error loading exercises:", exercisesError);
+      return;
     }
-  }
 
-  async function loadPlacements() {
-    try {
-      const token = await SecureStore.getItemAsync("access_token");
-      const res = await fetch(`${CONFIG.API_URL}/placements`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json();
-      const placementData = json.placements || [];
+    // Fetch user's exercise rankings with rank sort order
+    const { data: rankingsData, error: rankingsError } = await supabase
+      .from("exercise_rankings")
+      .select(
+        `
+        exercise_id,
+        normalized_score,
+        created_at,
+        ranks!inner(sort_order)
+      `
+      )
+      .eq("user_id", user.id);
 
-      // Group by exercise_id to get latest rank and count
-      const exerciseMap = new Map<number, Placement>();
-      placementData.forEach((p: any) => {
-        const exerciseId = p.exercise_id;
-        if (!exerciseMap.has(exerciseId)) {
-          exerciseMap.set(exerciseId, {
-            exercise_id: exerciseId,
-            rank_key: p.rank_key,
-            performed_count: 1,
+    if (rankingsError) {
+      console.error("Error loading rankings:", rankingsError);
+    }
+
+    // Create a map of exercise_id -> {highestScore, latestPerformed, rankSortOrder}
+    const rankingMap = new Map<
+      number,
+      { highestScore: number; latestPerformed: string; rankSortOrder: number }
+    >();
+
+    if (rankingsData) {
+      rankingsData.forEach((ranking: any) => {
+        const existing = rankingMap.get(ranking.exercise_id);
+        const score = ranking.normalized_score || 0;
+        const sortOrder = ranking.ranks?.sort_order || 999;
+
+        if (!existing || score > existing.highestScore) {
+          rankingMap.set(ranking.exercise_id, {
+            highestScore: score,
+            latestPerformed: ranking.created_at,
+            rankSortOrder: sortOrder,
           });
-        } else {
-          const existing = exerciseMap.get(exerciseId)!;
-          existing.performed_count += 1;
+        } else if (
+          score === existing.highestScore &&
+          ranking.created_at > existing.latestPerformed
+        ) {
+          // If same score, keep the latest date
+          rankingMap.set(ranking.exercise_id, {
+            highestScore: score,
+            latestPerformed: ranking.created_at,
+            rankSortOrder: sortOrder,
+          });
         }
       });
-
-      setPlacements(Array.from(exerciseMap.values()));
-    } catch (error) {
-      console.error("Error loading placements:", error);
     }
+
+    // Combine exercises with their ranking data
+    const enrichedExercises: ExerciseWithRanking[] = exercisesData.map(
+      (ex) => ({
+        ...ex,
+        highestScore: rankingMap.get(ex.id)?.highestScore,
+        latestPerformed: rankingMap.get(ex.id)?.latestPerformed,
+        rankSortOrder: rankingMap.get(ex.id)?.rankSortOrder,
+      })
+    );
+
+    setExercises(enrichedExercises);
+
+    // Extract unique categories
+    const uniqueCategories = [
+      ...new Set(exercisesData.map((ex) => ex.category).filter(Boolean)),
+    ] as string[];
+    setCategories(uniqueCategories.sort());
   }
 
-  function applyFilters() {
-    let result = exercises;
+  function applyFiltersAndSort() {
+    let result = [...exercises];
 
     // Search query filter
     if (query.trim()) {
@@ -185,45 +199,59 @@ export default function ExerciseSearchScreen() {
     }
 
     // Apply sorting
-    result = sortExercises(result);
+    switch (sortMode) {
+      case "rank":
+        // Sort by rank (performed exercises first, then by highest rank/score)
+        result.sort((a, b) => {
+          const aHasRank = a.rankSortOrder !== undefined;
+          const bHasRank = b.rankSortOrder !== undefined;
 
-    setFiltered(result);
-  }
+          // Performed exercises come first
+          if (aHasRank && !bHasRank) return -1;
+          if (!aHasRank && bHasRank) return 1;
 
-  function sortExercises(exerciseList: Exercise[]): Exercise[] {
-    const sorted = [...exerciseList];
+          // Both performed: sort by rank (lower sort_order = higher rank)
+          if (aHasRank && bHasRank) {
+            const rankDiff =
+              (a.rankSortOrder || 999) - (b.rankSortOrder || 999);
+            if (rankDiff !== 0) return rankDiff;
+            // If same rank, sort by score
+            return (b.highestScore || 0) - (a.highestScore || 0);
+          }
 
-    if (sortType === "alphabetical") {
-      return sorted.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (sortType === "rank") {
-      return sorted.sort((a, b) => {
-        const aPlacement = placements.find((p) => p.exercise_id === a.id);
-        const bPlacement = placements.find((p) => p.exercise_id === b.id);
+          // Neither performed: alphabetical
+          return a.name.localeCompare(b.name);
+        });
+        break;
 
-        const aRank = aPlacement ? RANK_ORDER[aPlacement.rank_key] || 999 : 999;
-        const bRank = bPlacement ? RANK_ORDER[bPlacement.rank_key] || 999 : 999;
+      case "performed":
+        // Sort by latest performed date
+        result.sort((a, b) => {
+          const aDate = a.latestPerformed;
+          const bDate = b.latestPerformed;
 
-        if (aRank !== bRank) {
-          return aRank - bRank;
-        }
-        return a.name.localeCompare(b.name);
-      });
-    } else if (sortType === "performed") {
-      return sorted.sort((a, b) => {
-        const aPlacement = placements.find((p) => p.exercise_id === a.id);
-        const bPlacement = placements.find((p) => p.exercise_id === b.id);
+          // Performed exercises come first
+          if (aDate && !bDate) return -1;
+          if (!aDate && bDate) return 1;
 
-        const aCount = aPlacement ? aPlacement.performed_count : 0;
-        const bCount = bPlacement ? bPlacement.performed_count : 0;
+          // Both performed: sort by date (most recent first)
+          if (aDate && bDate) {
+            return new Date(bDate).getTime() - new Date(aDate).getTime();
+          }
 
-        if (aCount !== bCount) {
-          return bCount - aCount; // Descending order
-        }
-        return a.name.localeCompare(b.name);
-      });
+          // Neither performed: alphabetical
+          return a.name.localeCompare(b.name);
+        });
+        break;
+
+      case "alphabetical":
+      default:
+        // Sort alphabetically
+        result.sort((a, b) => a.name.localeCompare(b.name));
+        break;
     }
 
-    return sorted;
+    setFiltered(result);
   }
 
   function toggleCategory(category: string) {
@@ -295,12 +323,12 @@ export default function ExerciseSearchScreen() {
       {/* Sorting Tabs */}
       <View style={styles.sortingTabs}>
         <TouchableOpacity
-          style={[styles.tab, sortType === "alphabetical" && styles.activeTab]}
-          onPress={() => setSortType("alphabetical")}
+          style={[styles.tab, sortMode === "alphabetical" && styles.activeTab]}
+          onPress={() => setSortMode("alphabetical")}
         >
           <Text
             style={
-              sortType === "alphabetical"
+              sortMode === "alphabetical"
                 ? styles.activeTabText
                 : styles.tabText
             }
@@ -309,22 +337,22 @@ export default function ExerciseSearchScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, sortType === "rank" && styles.activeTab]}
-          onPress={() => setSortType("rank")}
+          style={[styles.tab, sortMode === "rank" && styles.activeTab]}
+          onPress={() => setSortMode("rank")}
         >
           <Text
-            style={sortType === "rank" ? styles.activeTabText : styles.tabText}
+            style={sortMode === "rank" ? styles.activeTabText : styles.tabText}
           >
             By Rank
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, sortType === "performed" && styles.activeTab]}
-          onPress={() => setSortType("performed")}
+          style={[styles.tab, sortMode === "performed" && styles.activeTab]}
+          onPress={() => setSortMode("performed")}
         >
           <Text
             style={
-              sortType === "performed" ? styles.activeTabText : styles.tabText
+              sortMode === "performed" ? styles.activeTabText : styles.tabText
             }
           >
             Performed
@@ -338,24 +366,17 @@ export default function ExerciseSearchScreen() {
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContent}
         renderItem={({ item, index }) => {
-          // Only show section headers for alphabetical sort
+          // Show section headers only in alphabetical mode
+          const firstLetter = item.name[0].toUpperCase();
+          const prevFirstLetter =
+            index > 0 ? filtered[index - 1].name[0].toUpperCase() : null;
           const showHeader =
-            sortType === "alphabetical" &&
-            (() => {
-              const firstLetter = item.name[0].toUpperCase();
-              const prevFirstLetter =
-                index > 0 ? filtered[index - 1].name[0].toUpperCase() : null;
-              return firstLetter !== prevFirstLetter;
-            })();
-
-          const placement = placements.find((p) => p.exercise_id === item.id);
+            sortMode === "alphabetical" && firstLetter !== prevFirstLetter;
 
           return (
             <>
               {showHeader && (
-                <Text style={styles.sectionHeader}>
-                  {item.name[0].toUpperCase()}
-                </Text>
+                <Text style={styles.sectionHeader}>{firstLetter}</Text>
               )}
               <TouchableOpacity
                 style={styles.exerciseCard}
@@ -377,18 +398,6 @@ export default function ExerciseSearchScreen() {
                   <Text style={styles.exerciseCategory}>
                     {item.category.charAt(0).toUpperCase() +
                       item.category.slice(1)}
-                    {sortType === "rank" && placement && (
-                      <Text style={styles.rankBadgeText}>
-                        {" "}
-                        • {placement.rank_key.replace("_", " ")}
-                      </Text>
-                    )}
-                    {sortType === "performed" && placement && (
-                      <Text style={styles.performedBadgeText}>
-                        {" "}
-                        • {placement.performed_count}x
-                      </Text>
-                    )}
                   </Text>
                   <Text style={styles.exerciseName}>{item.name}</Text>
                 </View>
@@ -688,16 +697,6 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 17,
     fontFamily: "Quicksand_500Medium",
-  },
-  rankBadgeText: {
-    color: "#FFD700",
-    fontSize: 12,
-    fontFamily: "Quicksand_600SemiBold",
-  },
-  performedBadgeText: {
-    color: "#4ECDC4",
-    fontSize: 12,
-    fontFamily: "Quicksand_600SemiBold",
   },
   bodyweightBadge: {
     padding: 4,
