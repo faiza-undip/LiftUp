@@ -24,7 +24,9 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import HexBadge from "@/components/hex-badge";
+
 import { supabase } from "@/app/lib/supabase";
+import { CONFIG } from "../lib/config";
 
 const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 50;
@@ -239,7 +241,7 @@ export default function CalculatorScreen() {
     const token = await SecureStore.getItemAsync("access_token");
 
     const res = await fetch(
-      `${process.env.EXPO_PUBLIC_API_URL}/calculate-and-save`,
+      `${CONFIG.API_URL}/calculate-and-save`,
       {
         method: "POST",
         headers: {

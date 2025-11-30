@@ -14,6 +14,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/app/lib/supabase";
 import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+
+import { CONFIG } from "./lib/config";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -39,6 +42,23 @@ interface Exercise {
   is_default: boolean;
 }
 
+interface Placement {
+  exercise_id: number;
+  rank_key: string;
+  performed_count: number;
+}
+
+type SortType = "alphabetical" | "rank" | "performed";
+
+const RANK_ORDER: Record<string, number> = {
+  DIAMOND: 1,
+  PLATINUM: 2,
+  GOLD: 3,
+  SILVER: 4,
+  BRONZE: 5,
+  UNRANKED: 6,
+};
+
 export default function ExerciseSearchScreen() {
   const router = useRouter();
 
@@ -47,6 +67,8 @@ export default function ExerciseSearchScreen() {
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [slideAnim] = useState(new Animated.Value(SCREEN_HEIGHT));
+  const [sortType, setSortType] = useState<SortType>("alphabetical");
+  const [placements, setPlacements] = useState<Placement[]>([]);
 
   // Dynamically populated filter options from actual data
   const [categories, setCategories] = useState<string[]>([]);
@@ -59,11 +81,19 @@ export default function ExerciseSearchScreen() {
 
   useEffect(() => {
     loadExercises();
+    loadPlacements();
   }, []);
 
   useEffect(() => {
     applyFilters();
-  }, [query, selectedCategories, selectedBodyweight, exercises]);
+  }, [
+    query,
+    selectedCategories,
+    selectedBodyweight,
+    exercises,
+    sortType,
+    placements,
+  ]);
 
   useEffect(() => {
     if (showFilters) {
@@ -102,6 +132,37 @@ export default function ExerciseSearchScreen() {
     }
   }
 
+  async function loadPlacements() {
+    try {
+      const token = await SecureStore.getItemAsync("access_token");
+      const res = await fetch(`${CONFIG.API_URL}/placements`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      const placementData = json.placements || [];
+
+      // Group by exercise_id to get latest rank and count
+      const exerciseMap = new Map<number, Placement>();
+      placementData.forEach((p: any) => {
+        const exerciseId = p.exercise_id;
+        if (!exerciseMap.has(exerciseId)) {
+          exerciseMap.set(exerciseId, {
+            exercise_id: exerciseId,
+            rank_key: p.rank_key,
+            performed_count: 1,
+          });
+        } else {
+          const existing = exerciseMap.get(exerciseId)!;
+          existing.performed_count += 1;
+        }
+      });
+
+      setPlacements(Array.from(exerciseMap.values()));
+    } catch (error) {
+      console.error("Error loading placements:", error);
+    }
+  }
+
   function applyFilters() {
     let result = exercises;
 
@@ -123,7 +184,46 @@ export default function ExerciseSearchScreen() {
       result = result.filter((ex) => ex.is_bodyweight === false);
     }
 
+    // Apply sorting
+    result = sortExercises(result);
+
     setFiltered(result);
+  }
+
+  function sortExercises(exerciseList: Exercise[]): Exercise[] {
+    const sorted = [...exerciseList];
+
+    if (sortType === "alphabetical") {
+      return sorted.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortType === "rank") {
+      return sorted.sort((a, b) => {
+        const aPlacement = placements.find((p) => p.exercise_id === a.id);
+        const bPlacement = placements.find((p) => p.exercise_id === b.id);
+
+        const aRank = aPlacement ? RANK_ORDER[aPlacement.rank_key] || 999 : 999;
+        const bRank = bPlacement ? RANK_ORDER[bPlacement.rank_key] || 999 : 999;
+
+        if (aRank !== bRank) {
+          return aRank - bRank;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    } else if (sortType === "performed") {
+      return sorted.sort((a, b) => {
+        const aPlacement = placements.find((p) => p.exercise_id === a.id);
+        const bPlacement = placements.find((p) => p.exercise_id === b.id);
+
+        const aCount = aPlacement ? aPlacement.performed_count : 0;
+        const bCount = bPlacement ? bPlacement.performed_count : 0;
+
+        if (aCount !== bCount) {
+          return bCount - aCount; // Descending order
+        }
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return sorted;
   }
 
   function toggleCategory(category: string) {
@@ -194,14 +294,41 @@ export default function ExerciseSearchScreen() {
 
       {/* Sorting Tabs */}
       <View style={styles.sortingTabs}>
-        <TouchableOpacity style={[styles.tab, styles.activeTab]}>
-          <Text style={styles.activeTabText}>Alphabetical</Text>
+        <TouchableOpacity
+          style={[styles.tab, sortType === "alphabetical" && styles.activeTab]}
+          onPress={() => setSortType("alphabetical")}
+        >
+          <Text
+            style={
+              sortType === "alphabetical"
+                ? styles.activeTabText
+                : styles.tabText
+            }
+          >
+            Alphabetical
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Text style={styles.tabText}>By Rank</Text>
+        <TouchableOpacity
+          style={[styles.tab, sortType === "rank" && styles.activeTab]}
+          onPress={() => setSortType("rank")}
+        >
+          <Text
+            style={sortType === "rank" ? styles.activeTabText : styles.tabText}
+          >
+            By Rank
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Text style={styles.tabText}>Performed</Text>
+        <TouchableOpacity
+          style={[styles.tab, sortType === "performed" && styles.activeTab]}
+          onPress={() => setSortType("performed")}
+        >
+          <Text
+            style={
+              sortType === "performed" ? styles.activeTabText : styles.tabText
+            }
+          >
+            Performed
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -211,15 +338,24 @@ export default function ExerciseSearchScreen() {
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContent}
         renderItem={({ item, index }) => {
-          const firstLetter = item.name[0].toUpperCase();
-          const prevFirstLetter =
-            index > 0 ? filtered[index - 1].name[0].toUpperCase() : null;
-          const showHeader = firstLetter !== prevFirstLetter;
+          // Only show section headers for alphabetical sort
+          const showHeader =
+            sortType === "alphabetical" &&
+            (() => {
+              const firstLetter = item.name[0].toUpperCase();
+              const prevFirstLetter =
+                index > 0 ? filtered[index - 1].name[0].toUpperCase() : null;
+              return firstLetter !== prevFirstLetter;
+            })();
+
+          const placement = placements.find((p) => p.exercise_id === item.id);
 
           return (
             <>
               {showHeader && (
-                <Text style={styles.sectionHeader}>{firstLetter}</Text>
+                <Text style={styles.sectionHeader}>
+                  {item.name[0].toUpperCase()}
+                </Text>
               )}
               <TouchableOpacity
                 style={styles.exerciseCard}
@@ -241,6 +377,18 @@ export default function ExerciseSearchScreen() {
                   <Text style={styles.exerciseCategory}>
                     {item.category.charAt(0).toUpperCase() +
                       item.category.slice(1)}
+                    {sortType === "rank" && placement && (
+                      <Text style={styles.rankBadgeText}>
+                        {" "}
+                        • {placement.rank_key.replace("_", " ")}
+                      </Text>
+                    )}
+                    {sortType === "performed" && placement && (
+                      <Text style={styles.performedBadgeText}>
+                        {" "}
+                        • {placement.performed_count}x
+                      </Text>
+                    )}
                   </Text>
                   <Text style={styles.exerciseName}>{item.name}</Text>
                 </View>
@@ -540,6 +688,16 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 17,
     fontFamily: "Quicksand_500Medium",
+  },
+  rankBadgeText: {
+    color: "#FFD700",
+    fontSize: 12,
+    fontFamily: "Quicksand_600SemiBold",
+  },
+  performedBadgeText: {
+    color: "#4ECDC4",
+    fontSize: 12,
+    fontFamily: "Quicksand_600SemiBold",
   },
   bodyweightBadge: {
     padding: 4,
