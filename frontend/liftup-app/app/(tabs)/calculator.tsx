@@ -261,7 +261,16 @@ export default function CalculatorScreen() {
       return;
     }
 
-    setResult(json);
+    // Navigate to rank reveal screen
+    router.push({
+      pathname: "/rank-reveal",
+      params: {
+        rank: JSON.stringify(json.rank),
+        exercise: currentExercise.name,
+        weight: totalWeight.toString(),
+        reps: reps.toString(),
+      },
+    });
   }
 
   const handleShare = async () => {
@@ -559,7 +568,6 @@ const styles = StyleSheet.create({
   },
   exerciseCard: {
     flex: 1,
-    backgroundColor: "#10131A",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
