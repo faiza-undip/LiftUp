@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -8,13 +8,17 @@ import {
   Alert,
   TouchableOpacity,
   Image,
+  Animated,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 
 import { supabase } from "@/app/lib/supabase";
 import { useAuth } from "@/app/context/AuthContext";
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { session } = useAuth();
   const user = session?.user;
 
@@ -28,10 +32,29 @@ export default function ProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // Rotation animation for loading spinner
+  const spinValue = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (!user) return;
     loadProfile();
   }, [user]);
+
+  useEffect(() => {
+    if (uploading) {
+      // Start continuous rotation animation
+      Animated.loop(
+        Animated.timing(spinValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      // Reset rotation
+      spinValue.setValue(0);
+    }
+  }, [uploading]);
 
   async function loadProfile() {
     setLoading(true);
@@ -112,35 +135,37 @@ export default function ProfileScreen() {
       quality: 0.8,
       allowsEditing: true,
       aspect: [1, 1],
+      base64: true, // Get base64 data
     });
 
     if (result.canceled) return;
 
     const asset = result.assets[0];
-    if (!asset.uri) return;
+    if (!asset.uri || !asset.base64) return;
 
     setUploading(true);
 
     try {
-      const uri = asset.uri;
       const fileExt = (asset.fileName?.split(".").pop() || "jpg").toLowerCase();
       const filePath = `${user.id}.${fileExt}`;
 
-      // Supabase RN upload supports { uri, name, type } file objects
-      const file = {
-        uri,
-        name: filePath,
-        type: asset.mimeType || "image/jpeg",
-      } as any;
+      // Decode base64 to binary
+      const base64Data = asset.base64;
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(filePath, file, {
+        .upload(filePath, bytes.buffer, {
+          contentType: asset.mimeType || "image/jpeg",
           upsert: true,
         });
 
       if (uploadError) {
-        console.log(uploadError);
+        console.log("Upload error:", uploadError);
         Alert.alert("Upload error", uploadError.message);
         return;
       }
@@ -149,132 +174,175 @@ export default function ProfileScreen() {
         .from("avatars")
         .getPublicUrl(filePath);
 
-      const publicUrl = publicUrlData.publicUrl;
+      // Add timestamp to bust cache
+      const publicUrl = `${publicUrlData.publicUrl}?t=${new Date().getTime()}`;
 
       setAvatarUrl(publicUrl);
 
       const { error: profileError } = await supabase
         .from("profiles")
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: publicUrlData.publicUrl })
         .eq("id", user.id);
 
       if (profileError) {
-        console.log(profileError);
+        console.log("Profile update error:", profileError);
         Alert.alert("Error", "Avatar uploaded but failed to save profile.");
+      } else {
+        Alert.alert("Success", "Profile picture updated!");
       }
     } catch (err: any) {
-      console.log(err);
-      Alert.alert("Error", "Failed to upload avatar.");
+      console.log("Catch error:", err);
+      Alert.alert("Error", "Failed to upload avatar: " + err.message);
     } finally {
       setUploading(false);
     }
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 32 }}
-    >
-      <Text style={styles.title}>Profile</Text>
-
-      {/* Avatar */}
-      <View style={styles.avatarSection}>
-        {avatarUrl ? (
-          <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Text style={styles.avatarInitial}>
-              {user?.email?.[0]?.toUpperCase() || "?"}
-            </Text>
-          </View>
-        )}
-
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
         <TouchableOpacity
-          style={styles.avatarButton}
-          onPress={pickAvatar}
-          disabled={uploading}
+          style={styles.backButton}
+          onPress={() => router.back()}
         >
-          <Text style={styles.avatarButtonText}>
-            {uploading ? "Uploading..." : "Change Photo"}
-          </Text>
+          <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Profile</Text>
       </View>
 
-      {loading ? (
-        <Text style={styles.loading}>Loading...</Text>
-      ) : (
-        <>
-          <View style={styles.section}>
-            <Text style={styles.label}>Email</Text>
-            <View style={styles.readonlyBox}>
-              <Text style={styles.readonlyText}>{user?.email}</Text>
-            </View>
-          </View>
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Avatar */}
+        <View style={styles.avatarSection}>
+          <View>
+            {avatarUrl ? (
+              <Image
+                source={{ uri: avatarUrl }}
+                style={styles.avatar}
+                onError={(error) => {
+                  console.log("Image load error:", error.nativeEvent.error);
+                }}
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Text style={styles.avatarInitial}>
+                  {user?.email?.[0]?.toUpperCase() || "?"}
+                </Text>
+              </View>
+            )}
 
-          <View style={styles.section}>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Your name"
-              placeholderTextColor="#6B7280"
-              value={fullName}
-              onChangeText={setFullName}
-            />
-
-            <Text style={styles.label}>Gender</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Male / Female"
-              placeholderTextColor="#6B7280"
-              value={gender}
-              onChangeText={setGender}
-            />
-
-            <Text style={styles.label}>Birth Date</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#6B7280"
-              value={birthDate}
-              onChangeText={setBirthDate}
-            />
-
-            <Text style={styles.label}>Height (cm)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              placeholder="e.g. 170"
-              placeholderTextColor="#6B7280"
-              value={heightCm}
-              onChangeText={setHeightCm}
-            />
-
-            <Text style={styles.label}>Weight (kg)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              placeholder="e.g. 70"
-              placeholderTextColor="#6B7280"
-              value={weightKg}
-              onChangeText={setWeightKg}
-            />
-          </View>
-
-          <View style={styles.buttonGroup}>
             <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={saveProfile}
+              style={styles.editButton}
+              onPress={pickAvatar}
+              disabled={uploading}
             >
-              <Text style={styles.primaryButtonText}>Save Changes</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-              <Text style={styles.logoutText}>Log Out</Text>
+              {uploading ? (
+                <Animated.View
+                  style={{
+                    transform: [
+                      {
+                        rotate: spinValue.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ["0deg", "360deg"],
+                        }),
+                      },
+                    ],
+                  }}
+                >
+                  <Ionicons name="sync-outline" size={20} color="white" />
+                </Animated.View>
+              ) : (
+                <Ionicons name="pencil" size={20} color="white" />
+              )}
             </TouchableOpacity>
           </View>
-        </>
-      )}
-    </ScrollView>
+        </View>
+
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loading}>Loading...</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.readonlyBox}>
+                <Text style={styles.readonlyText}>{user?.email}</Text>
+              </View>
+              <Text style={styles.helperText}>
+                Your email address is permanent and cannot be changed
+              </Text>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Your name"
+                placeholderTextColor="#bdbbbb"
+                value={fullName}
+                onChangeText={setFullName}
+              />
+
+              <Text style={styles.label}>Gender</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Male / Female"
+                placeholderTextColor="#bdbbbb"
+                value={gender}
+                onChangeText={setGender}
+              />
+
+              <Text style={styles.label}>Birth Date</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor="#bdbbbb"
+                value={birthDate}
+                onChangeText={setBirthDate}
+              />
+
+              <Text style={styles.label}>Height (cm)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="e.g. 170"
+                placeholderTextColor="#bdbbbb"
+                value={heightCm}
+                onChangeText={setHeightCm}
+              />
+
+              <Text style={styles.label}>Weight (kg)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="e.g. 70"
+                placeholderTextColor="#bdbbbb"
+                value={weightKg}
+                onChangeText={setWeightKg}
+              />
+            </View>
+
+            <View style={styles.buttonGroup}>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={saveProfile}
+              >
+                <Text style={styles.primaryButtonText}>Save Changes</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+                <Text style={styles.logoutText}>Log Out</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -282,74 +350,141 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#050814",
-    paddingHorizontal: 16,
-    paddingTop: 16,
   },
-  title: { color: "white", fontSize: 24, fontWeight: "700", marginBottom: 16 },
-  loading: { color: "#9CA3AF", marginTop: 16 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 48,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: "#050814",
+  },
+  backButton: {
+    padding: 4,
+  },
+  headerTitle: {
+    color: "white",
+    fontSize: 28,
+    fontFamily: "Quicksand_700Bold",
+    flex: 1,
+    textAlign: "center",
+    marginRight: 32, // Offset back button width to truly center
+  },
+  scrollContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  loading: {
+    color: "#bdbbbb",
+    fontFamily: "Quicksand_400Regular",
+    fontSize: 16,
+  },
   avatarSection: {
     alignItems: "center",
-    marginBottom: 24,
+    marginTop: 24,
+    marginBottom: 32,
   },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#111827",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#1A2332",
+    borderWidth: 3,
+    borderColor: "#007bff",
   },
   avatarPlaceholder: {
     justifyContent: "center",
     alignItems: "center",
   },
   avatarInitial: {
-    color: "#9CA3AF",
-    fontSize: 32,
-    fontWeight: "700",
+    color: "#bdbbbb",
+    fontSize: 48,
+    fontFamily: "Quicksand_700Bold",
   },
-  avatarButton: {
-    marginTop: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#1F2933",
-    borderWidth: 1,
-    borderColor: "#4B5563",
+  editButton: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#007bff",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "#050814",
   },
-  avatarButtonText: {
-    color: "#E5E7EB",
-    fontSize: 13,
+  section: {
+    marginBottom: 24,
   },
-  section: { marginBottom: 20 },
-  label: { color: "#9CA3AF", marginBottom: 6, fontSize: 13 },
+  label: {
+    color: "white",
+    marginBottom: 8,
+    fontSize: 14,
+    fontFamily: "Quicksand_500Medium",
+  },
   input: {
     backgroundColor: "#111827",
     color: "white",
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginBottom: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    fontFamily: "Quicksand_400Regular",
+    fontSize: 16,
   },
   readonlyBox: {
-    backgroundColor: "#111827",
+    backgroundColor: "#1A2332",
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  readonlyText: { color: "#D1D5DB" },
-  buttonGroup: { marginTop: 8, gap: 12, marginBottom: 16 },
-  primaryButton: {
-    backgroundColor: "#4ECDC4",
     paddingVertical: 12,
-    borderRadius: 999,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  readonlyText: {
+    color: "#bdbbbb",
+    fontFamily: "Quicksand_400Regular",
+    fontSize: 16,
+  },
+  buttonGroup: {
+    marginTop: 8,
+    gap: 12,
+    marginBottom: 16,
+  },
+  primaryButton: {
+    backgroundColor: "#007bff",
+    paddingVertical: 14,
+    borderRadius: 8,
     alignItems: "center",
   },
-  primaryButtonText: { color: "#050814", fontWeight: "700", fontSize: 16 },
+  primaryButtonText: {
+    color: "white",
+    fontFamily: "Quicksand_600SemiBold",
+    fontSize: 16,
+  },
   logoutButton: {
-    borderWidth: 1,
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
     borderColor: "#EF4444",
-    borderRadius: 999,
-    paddingVertical: 10,
+    borderRadius: 8,
+    paddingVertical: 12,
     alignItems: "center",
   },
-  logoutText: { color: "#FCA5A5", fontWeight: "600" },
+  logoutText: {
+    color: "#FCA5A5",
+    fontFamily: "Quicksand_600SemiBold",
+    fontSize: 16,
+  },
+  helperText: {
+    color: "#6B7280",
+    fontFamily: "Quicksand_400Regular",
+    fontSize: 12,
+    marginTop: -8,
+    marginBottom: 16,
+  },
 });
