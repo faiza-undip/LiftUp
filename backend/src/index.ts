@@ -4,7 +4,7 @@ import "dotenv/config";
 import { z } from "zod";
 
 import { supabaseAdmin } from "./supabase/supabaseClient.js";
-import { estimate1RM } from "./logic/calc.js";
+import { estimate1RM, getWilksCoefficient } from "./logic/calc.js";
 import { getRankForScore } from "./logic/rankConfig.js";
 import { getMultiplier } from "./logic/multiplierConfig.js";
 
@@ -65,47 +65,50 @@ app.post("/calculate-and-save", async (req, res) => {
     return res.status(400).json({ error: "Invalid exerciseId" });
   }
 
-  // 2) Get user weight if bodyweight exercise
-  let userWeightKg = 0;
-  if (exercise.is_bodyweight) {
-    const { data: profile, error: profError } = await supabaseAdmin
-      .from("profiles")
-      .select("weight_kg")
-      .eq("id", userId)
-      .single();
+  // 2) Get user profile (weight + gender)
+  const { data: profile, error: profError } = await supabaseAdmin
+    .from("profiles")
+    .select("weight_kg, gender")
+    .eq("id", userId)
+    .single();
 
-    if (profError || !profile) {
-      return res.status(400).json({ error: "User profile / weight not found" });
-    }
-    userWeightKg = Number(profile.weight_kg) || 0;
+  if (profError || !profile) {
+    return res.status(400).json({ error: "User profile not found" });
   }
+
+  const userWeightKg = Number(profile.weight_kg) || 0;
+  const userGender = profile.gender as "Male" | "Female";
 
   // 3) Effective load
   const effectiveWeight = exercise.is_bodyweight
-    ? userWeightKg + weightKg // weightKg here is “extra load”, can be 0
+    ? userWeightKg + weightKg // weightKg here is "extra load", can be 0
     : weightKg;
 
   // 4) Raw 1RM
   const raw1RM = estimate1RM(effectiveWeight, reps);
 
-  // 5) Category multiplier & final score
-  const multiplier = getMultiplier(exercise.category, exercise.is_bodyweight);
-  const score = raw1RM * multiplier;
+  // 5) Apply Wilks coefficient for bodyweight normalization
+  const wilksCoeff = getWilksCoefficient(userWeightKg, userGender);
+  const wilksNormalized1RM = raw1RM * wilksCoeff;
 
-  // 6) Rank from score
+  // 6) Category multiplier & final score
+  const multiplier = getMultiplier(exercise.category, exercise.is_bodyweight);
+  const score = wilksNormalized1RM * multiplier;
+
+  // 7) Rank from score
   const rank = getRankForScore(score);
 
-  // 7) Store
+  // 8) Store
   const { data, error } = await supabaseAdmin
     .from("exercise_rankings")
     .insert({
       user_id: userId,
       exercise_id: exerciseId,
       rank_key: rank.key,
-      weight_kg: weightKg, // what user actually logged
+      weight_kg: weightKg,
       reps,
-      estimated_1rm: raw1RM, // keep the true 1RM
-      normalized_score: score, // see next section
+      estimated_1rm: raw1RM,
+      normalized_score: score,
     })
     .select()
     .single();
@@ -114,7 +117,6 @@ app.post("/calculate-and-save", async (req, res) => {
 
   return res.json({ ranking: data, rank });
 });
-
 /**
  * GET /placements
  * Returns latest 10 placements of a user
