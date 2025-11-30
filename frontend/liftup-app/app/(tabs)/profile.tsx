@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
   buttonGroup: {
     marginTop: 8,
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 80,
   },
   primaryButton: {
     backgroundColor: "#007bff",
