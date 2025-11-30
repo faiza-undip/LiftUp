@@ -1,12 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import { useRouter, useSegments } from "expo-router";
+import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "../lib/supabase";
-
-type Session = Awaited<
-  ReturnType<typeof supabase.auth.getSession>
->["data"]["session"];
 
 interface AuthCtx {
   session: Session | null;
@@ -37,6 +34,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log("Auth state changed:", _event);
       setSession(session);
       if (session?.access_token) {
         await SecureStore.setItemAsync("access_token", session.access_token);
@@ -48,39 +46,54 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({
     return () => subscription.unsubscribe();
   }, []);
 
-  // Routing guard
+  // Routing guard - SIMPLIFIED
   useEffect(() => {
     if (loading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inOnboarding = segments[0] === "onboarding";
+    const inTabs = segments[0] === "(tabs)";
 
-    if (!session) {
-      // not logged in → force into auth group
-      if (!inAuthGroup) router.replace("/(auth)/login");
-      return;
-    }
+    console.log("=== ROUTING GUARD ===");
+    console.log("Session exists:", !!session);
+    console.log("Current segments:", segments);
 
-    // logged in → decide between onboarding or tabs
     (async () => {
-      const { data: profile } = await supabase
+      if (!session) {
+        console.log("No session, checking auth group");
+        if (!inAuthGroup) {
+          console.log("Not in auth group, redirecting to login");
+          router.replace("/(auth)/login");
+        }
+        return;
+      }
+
+      // If we're already in onboarding or tabs, don't redirect
+      if (inOnboarding || inTabs) {
+        console.log("Already in correct location, skipping check");
+        return;
+      }
+
+      console.log("Checking profile for user:", session.user.id);
+      
+      const { data: profile, error } = await supabase
         .from("profiles")
         .select("id")
         .eq("id", session.user.id)
         .maybeSingle();
 
+      console.log("Profile data:", profile);
+      console.log("Profile error:", error);
+
       if (!profile) {
-        // no profile yet → force onboarding
-        if (segments[0] !== "onboarding") {
-          router.replace("/onboarding");
-        }
+        console.log("No profile found, redirecting to onboarding");
+        router.replace("/onboarding");
       } else {
-        // profile done → main tabs
-        if (inAuthGroup || segments[0] === "onboarding") {
-          router.replace("/(tabs)");
-        }
+        console.log("Profile exists, redirecting to tabs");
+        router.replace("/(tabs)");
       }
     })();
-  }, [session, loading, segments]);
+  }, [session, loading]);
 
   return (
     <AuthContext.Provider value={{ session, loading }}>
