@@ -271,6 +271,15 @@ npm install
 ```
 npx expo start
 ```
+
+## Download
+
+Wanna skip the whole setup and just wanna try the application? I got you, you can download the APK here below.
+
+<a href="./releases/liftup-v1.apk">
+  <img src="https://img.shields.io/badge/Download-APK-brightgreen?style=for-the-badge&logo=android" alt="Download APK">
+</a>
+
 And that's it, thanks for stopping by and reading this documentation. Hopefully, I'll see you soon on my next git project
 
 *- Faiza*
