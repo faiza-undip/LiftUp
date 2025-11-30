@@ -23,23 +23,60 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-      if (session?.access_token) {
-        await SecureStore.setItemAsync("access_token", session.access_token);
-      }
-    });
+    // Restore session on app startup
+    const restoreSession = async () => {
+      try {
+        // First, try to get the stored access token
+        const storedToken = await SecureStore.getItemAsync("access_token");
 
+        if (storedToken) {
+          console.log("Found stored token, restoring session");
+          // Set the session using the stored token
+          const { data, error } = await supabase.auth.setSession({
+            access_token: storedToken,
+            refresh_token:
+              (await SecureStore.getItemAsync("refresh_token")) || "",
+          });
+
+          if (error) {
+            console.error("Error restoring session:", error);
+            // Clear invalid tokens
+            await SecureStore.deleteItemAsync("access_token");
+            await SecureStore.deleteItemAsync("refresh_token");
+          } else {
+            setSession(data.session);
+          }
+        } else {
+          // No stored token, check if there's an active session
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          setSession(session);
+        }
+      } catch (error) {
+        console.error("Error in restoreSession:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    restoreSession();
+
+    // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       console.log("Auth state changed:", _event);
       setSession(session);
-      if (session?.access_token) {
+
+      if (session?.access_token && session?.refresh_token) {
+        // Store both tokens
         await SecureStore.setItemAsync("access_token", session.access_token);
+        await SecureStore.setItemAsync("refresh_token", session.refresh_token);
       } else {
+        // Clear tokens on sign out
         await SecureStore.deleteItemAsync("access_token");
+        await SecureStore.deleteItemAsync("refresh_token");
       }
     });
 
@@ -75,7 +112,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({
       }
 
       console.log("Checking profile for user:", session.user.id);
-      
+
       const { data: profile, error } = await supabase
         .from("profiles")
         .select("id")
