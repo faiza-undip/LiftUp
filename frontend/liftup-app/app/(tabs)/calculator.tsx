@@ -238,18 +238,21 @@ export default function CalculatorScreen() {
 
     const token = await SecureStore.getItemAsync("access_token");
 
-    const res = await fetch("http://localhost:4000/calculate-and-save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        exerciseId: currentExercise.id,
-        weightKg: totalWeight,
-        reps: reps,
-      }),
-    });
+    const res = await fetch(
+      `${process.env.EXPO_PUBLIC_API_URL}/calculate-and-save`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          exerciseId: currentExercise.id,
+          weightKg: totalWeight,
+          reps: reps,
+        }),
+      }
+    );
 
     const json = await res.json();
 
@@ -258,7 +261,16 @@ export default function CalculatorScreen() {
       return;
     }
 
-    setResult(json);
+    // Navigate to rank reveal screen
+    router.push({
+      pathname: "/rank-reveal",
+      params: {
+        rank: JSON.stringify(json.rank),
+        exercise: currentExercise.name,
+        weight: totalWeight.toString(),
+        reps: reps.toString(),
+      },
+    });
   }
 
   const handleShare = async () => {
@@ -556,7 +568,6 @@ const styles = StyleSheet.create({
   },
   exerciseCard: {
     flex: 1,
-    backgroundColor: "#10131A",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",

@@ -29,7 +29,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const loadPlacements = async () => {
     const token = await SecureStore.getItemAsync("access_token");
-    const res = await fetch("http://localhost:4000/placements", {
+    const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/placements`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const json = await res.json();
