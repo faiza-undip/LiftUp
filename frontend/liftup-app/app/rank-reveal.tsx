@@ -15,21 +15,9 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 
 import RankBadge from "@/components/rank-badge";
 
-const { width } = Dimensions.get("window");
+import { getRankGradient } from "@/utils/RankGradient";
 
-function getRankGradient(color: string): [string, string] {
-  const gradients: { [key: string]: [string, string] } = {
-    "#5DD9E8": ["#5DD9E8", "#3AB4C7"],
-    "#E63946": ["#E63946", "#C41E2E"],
-    "#C77DFF": ["#C77DFF", "#9D4EDD"],
-    "#7B9FE8": ["#7B9FE8", "#5B7FD8"],
-    "#4ECDC4": ["#4ECDC4", "#3AADA4"],
-    "#F4C430": ["#F4C430", "#D4A420"],
-    "#C0D6DF": ["#C0D6DF", "#A0B6BF"],
-    "#CD9575": ["#CD9575", "#AD7555"],
-  };
-  return gradients[color] || [color, color];
-}
+const { width } = Dimensions.get("window");
 
 export default function RankRevealScreen() {
   const router = useRouter();

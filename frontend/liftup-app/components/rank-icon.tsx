@@ -10,6 +10,22 @@ export default function RankIcon({ rankKey, size = 35 }: RankIconProps) {
   const strokeWidth = "2";
   const iconColor = "white";
 
+  // Unranked
+  if (rankKey.includes("UNRANKED")) {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 32 32">
+        <Path
+          d="M16 1.25L30.75 16L16 30.75L1.25 16L16 1.25Z"
+          stroke={iconColor}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </Svg>
+    );
+  }
+
   // Wood ranks
   if (rankKey.includes("WOOD")) {
     return (

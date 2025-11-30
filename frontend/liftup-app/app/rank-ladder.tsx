@@ -13,21 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import RankBadge from "@/components/rank-badge";
 
 import { RANKS } from "../constants/ranks";
-
-// Get gradient colors based on rank
-function getRankGradient(color: string): string[] {
-  const gradients: { [key: string]: string[] } = {
-    "#5DD9E8": ["#5DD9E8", "#3AB4C7"], // Olympian - Cyan
-    "#E63946": ["#E63946", "#C41E2E"], // Titan - Red
-    "#C77DFF": ["#C77DFF", "#9D4EDD"], // Champion - Purple
-    "#7B9FE8": ["#7B9FE8", "#5B7FD8"], // Diamond - Blue
-    "#4ECDC4": ["#4ECDC4", "#3AADA4"], // Platinum - Teal
-    "#F4C430": ["#F4C430", "#D4A420"], // Gold - Gold
-    "#C0D6DF": ["#C0D6DF", "#A0B6BF"], // Silver - Silver
-    "#CD9575": ["#CD9575", "#AD7555"], // Bronze/Wood - Bronze
-  };
-  return gradients[color] || [color, color];
-}
+import { getRankGradient } from "@/utils/RankGradient";
 
 export default function RankLadderScreen() {
   const router = useRouter();
