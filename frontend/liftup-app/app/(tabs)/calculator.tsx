@@ -238,18 +238,21 @@ export default function CalculatorScreen() {
 
     const token = await SecureStore.getItemAsync("access_token");
 
-    const res = await fetch("http://localhost:4000/calculate-and-save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        exerciseId: currentExercise.id,
-        weightKg: totalWeight,
-        reps: reps,
-      }),
-    });
+    const res = await fetch(
+      `${process.env.EXPO_PUBLIC_API_URL}/calculate-and-save`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          exerciseId: currentExercise.id,
+          weightKg: totalWeight,
+          reps: reps,
+        }),
+      }
+    );
 
     const json = await res.json();
 
