@@ -39,14 +39,23 @@ interface Exercise {
   is_default: boolean;
 }
 
+interface ExerciseWithRanking extends Exercise {
+  highestScore?: number;
+  latestPerformed?: string;
+  rankSortOrder?: number;
+}
+
+type SortMode = "alphabetical" | "rank" | "performed";
+
 export default function ExerciseSearchScreen() {
   const router = useRouter();
 
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [filtered, setFiltered] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExerciseWithRanking[]>([]);
+  const [filtered, setFiltered] = useState<ExerciseWithRanking[]>([]);
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [slideAnim] = useState(new Animated.Value(SCREEN_HEIGHT));
+  const [sortMode, setSortMode] = useState<SortMode>("alphabetical");
 
   // Dynamically populated filter options from actual data
   const [categories, setCategories] = useState<string[]>([]);
@@ -62,8 +71,8 @@ export default function ExerciseSearchScreen() {
   }, []);
 
   useEffect(() => {
-    applyFilters();
-  }, [query, selectedCategories, selectedBodyweight, exercises]);
+    applyFiltersAndSort();
+  }, [query, selectedCategories, selectedBodyweight, exercises, sortMode]);
 
   useEffect(() => {
     if (showFilters) {
@@ -83,27 +92,93 @@ export default function ExerciseSearchScreen() {
   }, [showFilters]);
 
   async function loadExercises() {
-    const { data, error } = await supabase
+    // Get current user
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Fetch all exercises
+    const { data: exercisesData, error: exercisesError } = await supabase
       .from("exercises")
       .select("*")
       .order("name", { ascending: true });
 
-    if (!error && data) {
-      setExercises(data);
-      setFiltered(data);
-
-      // Extract unique categories from the data
-      const uniqueCategories = [
-        ...new Set(data.map((ex) => ex.category).filter(Boolean)),
-      ] as string[];
-      setCategories(uniqueCategories.sort());
-    } else if (error) {
-      console.error("Error loading exercises:", error);
+    if (exercisesError || !exercisesData) {
+      console.error("Error loading exercises:", exercisesError);
+      return;
     }
+
+    // Fetch user's exercise rankings with rank sort order
+    const { data: rankingsData, error: rankingsError } = await supabase
+      .from("exercise_rankings")
+      .select(
+        `
+        exercise_id,
+        normalized_score,
+        created_at,
+        ranks!inner(sort_order)
+      `
+      )
+      .eq("user_id", user.id);
+
+    if (rankingsError) {
+      console.error("Error loading rankings:", rankingsError);
+    }
+
+    // Create a map of exercise_id -> {highestScore, latestPerformed, rankSortOrder}
+    const rankingMap = new Map<
+      number,
+      { highestScore: number; latestPerformed: string; rankSortOrder: number }
+    >();
+
+    if (rankingsData) {
+      rankingsData.forEach((ranking: any) => {
+        const existing = rankingMap.get(ranking.exercise_id);
+        const score = ranking.normalized_score || 0;
+        const sortOrder = ranking.ranks?.sort_order || 999;
+
+        if (!existing || score > existing.highestScore) {
+          rankingMap.set(ranking.exercise_id, {
+            highestScore: score,
+            latestPerformed: ranking.created_at,
+            rankSortOrder: sortOrder,
+          });
+        } else if (
+          score === existing.highestScore &&
+          ranking.created_at > existing.latestPerformed
+        ) {
+          // If same score, keep the latest date
+          rankingMap.set(ranking.exercise_id, {
+            highestScore: score,
+            latestPerformed: ranking.created_at,
+            rankSortOrder: sortOrder,
+          });
+        }
+      });
+    }
+
+    // Combine exercises with their ranking data
+    const enrichedExercises: ExerciseWithRanking[] = exercisesData.map(
+      (ex) => ({
+        ...ex,
+        highestScore: rankingMap.get(ex.id)?.highestScore,
+        latestPerformed: rankingMap.get(ex.id)?.latestPerformed,
+        rankSortOrder: rankingMap.get(ex.id)?.rankSortOrder,
+      })
+    );
+
+    setExercises(enrichedExercises);
+
+    // Extract unique categories
+    const uniqueCategories = [
+      ...new Set(exercisesData.map((ex) => ex.category).filter(Boolean)),
+    ] as string[];
+    setCategories(uniqueCategories.sort());
   }
 
-  function applyFilters() {
-    let result = exercises;
+  function applyFiltersAndSort() {
+    let result = [...exercises];
 
     // Search query filter
     if (query.trim()) {
@@ -121,6 +196,59 @@ export default function ExerciseSearchScreen() {
       result = result.filter((ex) => ex.is_bodyweight === true);
     } else if (selectedBodyweight === "weighted") {
       result = result.filter((ex) => ex.is_bodyweight === false);
+    }
+
+    // Apply sorting
+    switch (sortMode) {
+      case "rank":
+        // Sort by rank (performed exercises first, then by highest rank/score)
+        result.sort((a, b) => {
+          const aHasRank = a.rankSortOrder !== undefined;
+          const bHasRank = b.rankSortOrder !== undefined;
+
+          // Performed exercises come first
+          if (aHasRank && !bHasRank) return -1;
+          if (!aHasRank && bHasRank) return 1;
+
+          // Both performed: sort by rank (lower sort_order = higher rank)
+          if (aHasRank && bHasRank) {
+            const rankDiff =
+              (a.rankSortOrder || 999) - (b.rankSortOrder || 999);
+            if (rankDiff !== 0) return rankDiff;
+            // If same rank, sort by score
+            return (b.highestScore || 0) - (a.highestScore || 0);
+          }
+
+          // Neither performed: alphabetical
+          return a.name.localeCompare(b.name);
+        });
+        break;
+
+      case "performed":
+        // Sort by latest performed date
+        result.sort((a, b) => {
+          const aDate = a.latestPerformed;
+          const bDate = b.latestPerformed;
+
+          // Performed exercises come first
+          if (aDate && !bDate) return -1;
+          if (!aDate && bDate) return 1;
+
+          // Both performed: sort by date (most recent first)
+          if (aDate && bDate) {
+            return new Date(bDate).getTime() - new Date(aDate).getTime();
+          }
+
+          // Neither performed: alphabetical
+          return a.name.localeCompare(b.name);
+        });
+        break;
+
+      case "alphabetical":
+      default:
+        // Sort alphabetically
+        result.sort((a, b) => a.name.localeCompare(b.name));
+        break;
     }
 
     setFiltered(result);
@@ -194,14 +322,41 @@ export default function ExerciseSearchScreen() {
 
       {/* Sorting Tabs */}
       <View style={styles.sortingTabs}>
-        <TouchableOpacity style={[styles.tab, styles.activeTab]}>
-          <Text style={styles.activeTabText}>Alphabetical</Text>
+        <TouchableOpacity
+          style={[styles.tab, sortMode === "alphabetical" && styles.activeTab]}
+          onPress={() => setSortMode("alphabetical")}
+        >
+          <Text
+            style={
+              sortMode === "alphabetical"
+                ? styles.activeTabText
+                : styles.tabText
+            }
+          >
+            Alphabetical
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Text style={styles.tabText}>By Rank</Text>
+        <TouchableOpacity
+          style={[styles.tab, sortMode === "rank" && styles.activeTab]}
+          onPress={() => setSortMode("rank")}
+        >
+          <Text
+            style={sortMode === "rank" ? styles.activeTabText : styles.tabText}
+          >
+            By Rank
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Text style={styles.tabText}>Performed</Text>
+        <TouchableOpacity
+          style={[styles.tab, sortMode === "performed" && styles.activeTab]}
+          onPress={() => setSortMode("performed")}
+        >
+          <Text
+            style={
+              sortMode === "performed" ? styles.activeTabText : styles.tabText
+            }
+          >
+            Performed
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -211,10 +366,12 @@ export default function ExerciseSearchScreen() {
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContent}
         renderItem={({ item, index }) => {
+          // Show section headers only in alphabetical mode
           const firstLetter = item.name[0].toUpperCase();
           const prevFirstLetter =
             index > 0 ? filtered[index - 1].name[0].toUpperCase() : null;
-          const showHeader = firstLetter !== prevFirstLetter;
+          const showHeader =
+            sortMode === "alphabetical" && firstLetter !== prevFirstLetter;
 
           return (
             <>

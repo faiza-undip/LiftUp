@@ -18,12 +18,13 @@ import Svg, {
   LinearGradient as SvgLinearGradient,
   Stop,
 } from "react-native-svg";
-import { Ionicons } from "@expo/vector-icons";
 
 import RankBadge from "@/components/rank-badge";
+
 import { useAuth } from "../context/AuthContext";
 import { RANK_COLORS } from "@/constants/rank-colors";
 import { supabase } from "@/app/lib/supabase";
+import { CONFIG } from "../lib/config";
 
 const { width } = Dimensions.get("window");
 
@@ -108,7 +109,7 @@ export default function HomeScreen() {
   const loadPlacements = async () => {
     try {
       const token = await SecureStore.getItemAsync("access_token");
-      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/placements`, {
+      const res = await fetch(`${CONFIG.API_URL}/placements`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
