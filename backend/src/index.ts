@@ -4,9 +4,8 @@ import "dotenv/config";
 import { z } from "zod";
 
 import { supabaseAdmin } from "./supabase/supabaseClient.js";
-import { estimate1RM, getWilksCoefficient } from "./logic/calc.js";
+import { calculateExerciseScore, estimate1RM } from "./logic/calc.js";
 import { getRankForScore } from "./logic/rankConfig.js";
-import { getMultiplier } from "./logic/multiplierConfig.js";
 
 const app = express();
 app.use(cors());
@@ -79,26 +78,27 @@ app.post("/calculate-and-save", async (req, res) => {
   const userWeightKg = Number(profile.weight_kg) || 0;
   const userGender = profile.gender as "Male" | "Female";
 
-  // 3) Effective load
+  // 3) Calculate effective weight and 1RM
   const effectiveWeight = exercise.is_bodyweight
-    ? userWeightKg + weightKg // weightKg here is "extra load", can be 0
+    ? userWeightKg + weightKg // weightKg is extra load
     : weightKg;
 
-  // 4) Raw 1RM
   const raw1RM = estimate1RM(effectiveWeight, reps);
 
-  // 5) Apply Wilks coefficient for bodyweight normalization
-  const wilksCoeff = getWilksCoefficient(userWeightKg, userGender);
-  const wilksNormalized1RM = raw1RM * wilksCoeff;
+  // 4) NEW: Calculate score using exercise-specific standards
+  const score = calculateExerciseScore(
+    exercise.name,
+    raw1RM,
+    userWeightKg,
+    userGender,
+    exercise.is_bodyweight,
+    weightKg // extra load for bodyweight exercises
+  );
 
-  // 6) Category multiplier & final score
-  const multiplier = getMultiplier(exercise.category, exercise.is_bodyweight);
-  const score = wilksNormalized1RM * multiplier;
-
-  // 7) Rank from score
+  // 5) Determine rank
   const rank = getRankForScore(score);
 
-  // 8) Store
+  // 6) Store
   const { data, error } = await supabaseAdmin
     .from("exercise_rankings")
     .insert({
