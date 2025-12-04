@@ -188,6 +188,26 @@ export default function HomeScreen() {
     (a, b) => new Date(b).getTime() - new Date(a).getTime()
   );
 
+  const handleHistoryItemPress = (placement: Placement) => {
+    const date = new Date(placement.created_at).toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    router.push({
+      pathname: "/exercise-detail",
+      params: {
+        rankKey: placement.rank_key,
+        exerciseName: placement.exercises.name,
+        weight: placement.weight_kg.toString(),
+        reps: placement.reps.toString(),
+        estimated1rm: placement.estimated_1rm.toString(),
+        date: date,
+      },
+    });
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -324,7 +344,12 @@ export default function HomeScreen() {
                     RANK_COLORS[placement.rank_key] || RANK_COLORS.UNRANKED;
 
                   return (
-                    <View key={placement.id} style={styles.historyItem}>
+                    <TouchableOpacity
+                      key={placement.id}
+                      style={styles.historyItem}
+                      onPress={() => handleHistoryItemPress(placement)}
+                      activeOpacity={0.7}
+                    >
                       <View style={styles.historyBadge}>
                         <RankBadge
                           colors={colors}
@@ -344,7 +369,7 @@ export default function HomeScreen() {
                           {placement.weight_kg}kg × {placement.reps} reps
                         </Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
