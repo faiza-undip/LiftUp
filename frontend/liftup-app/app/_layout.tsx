@@ -156,6 +156,7 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="rank-ladder" />
         <Stack.Screen name="exercise-search" />
+        <Stack.Screen name="exercise-detail" />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
