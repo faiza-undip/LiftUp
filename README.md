@@ -14,7 +14,9 @@ It's also, safe to say, heavily inspired by **Liftoff** (shout out to the dev te
 
 But from their whole features, I cherry-picked the features I definitely need the most, remove the features I don't really use often or at all, and put it all and compressed it on LiftUp, which is the lift ranking, the gamified animation aspect, and the lift history so you can see your progress every time you logged your training.
 
-LiftUp is super straight-forward and easy to use, I did tweak some of the original Liftoff workflow so that it'll be more user-friendly. Check out the preview of the app below!
+LiftUp is super straight-forward and easy to use, I did tweak some of the original Liftoff workflow so that it'll be more user-friendly. 
+
+Check out the preview of the app below!
 
 <p align="center">
     <img width="100%"
