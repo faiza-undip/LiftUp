@@ -3,7 +3,7 @@ export default {
   expo: {
     name: "LiftUp",
     slug: "liftup-app",
-    version: "1.0.0",
+    version: "1.1.0",
     orientation: "portrait",
     icon: "./assets/images/liftup-logo.png",
     scheme: "liftupapp",

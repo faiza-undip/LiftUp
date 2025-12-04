@@ -15,11 +15,21 @@ interface RankBadgeProps {
   size?: number;
 }
 
-export default function RankBadge({ colors, rankKey, size = 90 }: RankBadgeProps) {
+export default function RankBadge({
+  colors,
+  rankKey,
+  size = 90,
+}: RankBadgeProps) {
   const gradientId = `gradient-${Math.random().toString(36).substr(2, 9)}`;
 
+  // Calculate icon size as a proportion of the badge size
+  // For size=140, icon should be ~40 (28.5% of badge size)
+  // For size=50, icon should be ~14-15 (28.5% of badge size)
+  const iconSizeRatio = rankKey.includes("WOOD") ? 0.25 : 0.285;
+  const iconSize = Math.round(size * iconSizeRatio);
+
   return (
-    <View style={styles.badgeContainer}>
+    <View style={[styles.badgeContainer, { width: size, height: size }]}>
       <Svg
         width={size}
         height={size}
@@ -54,7 +64,7 @@ export default function RankBadge({ colors, rankKey, size = 90 }: RankBadgeProps
 
       {/* Overlay SVG Icon */}
       <View style={styles.iconOverlay}>
-        <RankIcon rankKey={rankKey} size={rankKey.includes("WOOD") ? 35 : 40} />
+        <RankIcon rankKey={rankKey} size={iconSize} />
       </View>
     </View>
   );
@@ -63,8 +73,6 @@ export default function RankBadge({ colors, rankKey, size = 90 }: RankBadgeProps
 const styles = StyleSheet.create({
   badgeContainer: {
     position: "relative",
-    width: 90,
-    height: 90,
     alignItems: "center",
     justifyContent: "center",
   },
