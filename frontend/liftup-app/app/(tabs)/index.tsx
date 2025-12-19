@@ -148,21 +148,7 @@ export default function HomeScreen() {
     }, [user])
   );
 
-  // Get unique exercises count
-  const uniqueExercises = new Set(placements.map((p) => p.exercises.name));
-  const uniqueCount = uniqueExercises.size;
-  const hasFullRank = uniqueCount >= 10;
-
-  // Get overall rank
-  const overallRankKey =
-    placements.length > 0 ? placements[0]?.rank_key : "UNRANKED";
-
-  // Find the rank object from RANKS to get the color
-  const overallRank = RANKS.find((r) => r.key === overallRankKey) || RANKS[0];
-  const rankColors = getRankGradient(overallRank.color);
-  const rankLabel = overallRankKey.replace("_", " ");
-
-  // Get last 10 unique exercise placements for hexagons (latest rank per exercise)
+  // Get latest placement for each unique exercise
   const latestPlacementsByExercise = new Map<string, Placement>();
   placements.forEach((placement) => {
     const exerciseName = placement.exercises.name;
@@ -170,9 +156,36 @@ export default function HomeScreen() {
       latestPlacementsByExercise.set(exerciseName, placement);
     }
   });
-  const latestPlacements = Array.from(
-    latestPlacementsByExercise.values()
-  ).slice(0, 10);
+  const latestPlacements = Array.from(latestPlacementsByExercise.values());
+
+  // Get unique exercises count
+  const uniqueCount = latestPlacements.length;
+  const hasFullRank = uniqueCount >= 10;
+
+  // Calculate overall rank by averaging ALL latest exercise ranks
+  let overallRankKey = "UNRANKED";
+  
+  if (latestPlacements.length > 0) {
+    // Get rank indices for each exercise's latest placement
+    const rankIndices = latestPlacements
+      .map((placement) => {
+        const rankIndex = RANKS.findIndex((r) => r.key === placement.rank_key);
+        return rankIndex !== -1 ? rankIndex : RANKS.length - 1;
+      });
+
+    // Calculate average rank index (lower index = higher rank in RANKS array)
+    const avgRankIndex = Math.round(
+      rankIndices.reduce((sum, idx) => sum + idx, 0) / rankIndices.length
+    );
+
+    // Get the overall rank key
+    overallRankKey = RANKS[avgRankIndex]?.key || "UNRANKED";
+  }
+
+  // Find the rank object from RANKS to get the color
+  const overallRank = RANKS.find((r) => r.key === overallRankKey) || RANKS[RANKS.length - 1];
+  const rankColors = getRankGradient(overallRank.color);
+  const rankLabel = overallRankKey.replace("_", " ");
 
   // Group placements by date for history
   const groupedHistory = placements.reduce((acc, placement) => {
@@ -534,7 +547,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 0,
-    marginLeft: -24,
+    marginLeft: -5,
     marginBottom: 4,
   },
   historyBadge: {
