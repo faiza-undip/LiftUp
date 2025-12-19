@@ -85,20 +85,25 @@ app.post("/calculate-and-save", async (req, res) => {
 
   const raw1RM = estimate1RM(effectiveWeight, reps);
 
-  // 4) NEW: Calculate score using exercise-specific standards
-  const score = calculateExerciseScore(
+  // 4) Calculate raw score (0-300+ range)
+  const rawScore = calculateExerciseScore(
     exercise.name,
     raw1RM,
     userWeightKg,
     userGender,
     exercise.is_bodyweight,
-    weightKg // extra load for bodyweight exercises
+    weightKg
   );
 
-  // 5) Determine rank
-  const rank = getRankForScore(score);
+  // 5) NEW: Normalize score to 0-25 range for ranking
+  // Elite score is 250, Olympian (beyond elite) starts at 25
+  // Linear mapping: score 0 -> rank 0, score 250 -> rank 25
+  const normalizedScore = Math.min((rawScore / 250) * 25, 30); // Cap at 30 for super-olympians
 
-  // 6) Store
+  // 6) Determine rank based on normalized score
+  const rank = getRankForScore(normalizedScore);
+
+  // 7) Store (keep rawScore as normalized_score for consistency)
   const { data, error } = await supabaseAdmin
     .from("exercise_rankings")
     .insert({
@@ -108,14 +113,18 @@ app.post("/calculate-and-save", async (req, res) => {
       weight_kg: weightKg,
       reps,
       estimated_1rm: raw1RM,
-      normalized_score: score,
+      normalized_score: normalizedScore, // Store the 0-25 score
     })
     .select()
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
 
-  return res.json({ ranking: data, rank });
+  return res.json({ 
+    ranking: data, 
+    rank,
+    debug: { rawScore, normalizedScore } // Helpful for debugging
+  });
 });
 /**
  * GET /placements

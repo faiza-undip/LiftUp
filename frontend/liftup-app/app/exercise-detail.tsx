@@ -12,7 +12,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import RankBadge from "@/components/rank-badge";
-import { RANK_COLORS } from "@/constants/rank-colors";
+import { RANKS } from "@/constants/ranks";
+import { getRankGradient } from "@/utils/RankGradient";
 
 const { width } = Dimensions.get("window");
 
@@ -20,19 +21,56 @@ const { width } = Dimensions.get("window");
 const RANK_DESCRIPTIONS: Record<string, string> = {
   UNRANKED:
     "You're just getting started. Keep training to establish your baseline strength and earn your first rank!",
-  BRONZE:
+  WOOD_I:
     "You've taken your first steps into structured strength training. This rank represents foundational fitness and the beginning of your journey.",
-  SILVER:
+  WOOD_II:
+    "You've taken your first steps into structured strength training. This rank represents foundational fitness and the beginning of your journey.",
+  WOOD_III:
+    "You've taken your first steps into structured strength training. This rank represents foundational fitness and the beginning of your journey.",
+  BRONZE_I:
     "You're developing solid technique and consistency. Your lifts show progress beyond beginner levels, demonstrating dedication to your training.",
-  GOLD: "You've achieved impressive strength that puts you above most casual gym-goers. Your training shows serious commitment and results.",
-  PLATINUM:
+  BRONZE_II:
+    "You're developing solid technique and consistency. Your lifts show progress beyond beginner levels, demonstrating dedication to your training.",
+  BRONZE_III:
+    "You're developing solid technique and consistency. Your lifts show progress beyond beginner levels, demonstrating dedication to your training.",
+  SILVER_I:
+    "You've achieved impressive strength that puts you above most casual gym-goers. Your training shows serious commitment and results.",
+  SILVER_II:
+    "You've achieved impressive strength that puts you above most casual gym-goers. Your training shows serious commitment and results.",
+  SILVER_III:
+    "You've achieved impressive strength that puts you above most casual gym-goers. Your training shows serious commitment and results.",
+  GOLD_I:
     "You're in elite territory. This rank represents strength that only dedicated athletes achieve through years of consistent, focused training.",
-  DIAMOND:
+  GOLD_II:
+    "You're in elite territory. This rank represents strength that only dedicated athletes achieve through years of consistent, focused training.",
+  GOLD_III:
+    "You're in elite territory. This rank represents strength that only dedicated athletes achieve through years of consistent, focused training.",
+  PLATINUM_I:
     "You've reached extraordinary levels of strength. This rank is reserved for those with exceptional genetics, training, and unwavering dedication.",
-  MASTER:
+  PLATINUM_II:
+    "You've reached extraordinary levels of strength. This rank is reserved for those with exceptional genetics, training, and unwavering dedication.",
+  PLATINUM_III:
+    "You've reached extraordinary levels of strength. This rank is reserved for those with exceptional genetics, training, and unwavering dedication.",
+  DIAMOND_I:
     "You're among the strongest individuals in the world. This rank represents world-class strength that few ever achieve.",
-  GRANDMASTER:
-    "You've transcended human limits. This is the pinnacle of strength achievement, representing legendary status in the strength community.",
+  DIAMOND_II:
+    "You're among the strongest individuals in the world. This rank represents world-class strength that few ever achieve.",
+  DIAMOND_III:
+    "You're among the strongest individuals in the world. This rank represents world-class strength that few ever achieve.",
+  CHAMPION_I:
+    "You've transcended human limits. This is near the pinnacle of strength achievement, representing legendary status in the strength community.",
+  CHAMPION_II:
+    "You've transcended human limits. This is near the pinnacle of strength achievement, representing legendary status in the strength community.",
+  CHAMPION_III:
+    "You've transcended human limits. This is near the pinnacle of strength achievement, representing legendary status in the strength community.",
+  TITAN_I:
+    "You're among the strongest beings on Earth. This rank represents truly superhuman strength that defies expectations.",
+  TITAN_II:
+    "You're among the strongest beings on Earth. This rank represents truly superhuman strength that defies expectations.",
+  TITAN_III:
+    "You're among the strongest beings on Earth. This rank represents truly superhuman strength that defies expectations.",
+  OLYMPIAN:
+    "You've achieved the absolute pinnacle. This is the highest rank possible, representing strength that rivals Olympic champions and world record holders.",
 };
 
 export default function ExerciseDetailScreen() {
@@ -47,7 +85,11 @@ export default function ExerciseDetailScreen() {
   const estimated1rm = Number(params.estimated1rm);
   const date = params.date as string;
 
-  const rankColors = RANK_COLORS[rankKey] || RANK_COLORS.UNRANKED;
+  // Find the rank object from RANKS to get the color
+  const rank = RANKS.find((r) => r.key === rankKey);
+  const rankColors = rank
+    ? getRankGradient(rank.color)
+    : getRankGradient("#4B5563");
   const rankLabel = rankKey.replace("_", " ");
   const rankDescription =
     RANK_DESCRIPTIONS[rankKey] || RANK_DESCRIPTIONS.UNRANKED;

@@ -1,5 +1,5 @@
-export function getRankGradient(color: string): string[] {
-  const gradients: { [key: string]: string[] } = {
+export function getRankGradient(color: string): [string, string] {
+  const gradients: { [key: string]: [string, string] } = {
     "#5DD9E8": ["#5DD9E8", "#3AB4C7"], // Olympian - Cyan
     "#E63946": ["#E63946", "#C41E2E"], // Titan - Red
     "#C77DFF": ["#C77DFF", "#9D4EDD"], // Champion - Purple
@@ -9,6 +9,7 @@ export function getRankGradient(color: string): string[] {
     "#C0D6DF": ["#C0D6DF", "#A0B6BF"], // Silver - Silver
     "#CD7F32": ["#CD7F32", "#B87333"], // Bronze - Bronze
     "#8B4513": ["#8B4513", "#654321"], // Wood - Brown
+    "#4B5563": ["#4B5563", "#374151"], // Unranked - Gray
   };
   return gradients[color] || [color, color];
 }

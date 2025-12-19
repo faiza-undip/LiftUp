@@ -22,9 +22,10 @@ import Svg, {
 import RankBadge from "@/components/rank-badge";
 
 import { useAuth } from "../context/AuthContext";
-import { RANK_COLORS } from "@/constants/rank-colors";
 import { supabase } from "@/app/lib/supabase";
 import { CONFIG } from "../lib/config";
+import { RANKS } from "@/constants/ranks";
+import { getRankGradient } from "@/utils/RankGradient";
 
 const { width } = Dimensions.get("window");
 
@@ -155,7 +156,10 @@ export default function HomeScreen() {
   // Get overall rank
   const overallRankKey =
     placements.length > 0 ? placements[0]?.rank_key : "UNRANKED";
-  const rankColors = RANK_COLORS[overallRankKey] || RANK_COLORS.UNRANKED;
+
+  // Find the rank object from RANKS to get the color
+  const overallRank = RANKS.find((r) => r.key === overallRankKey) || RANKS[0];
+  const rankColors = getRankGradient(overallRank.color);
   const rankLabel = overallRankKey.replace("_", " ");
 
   // Get last 10 unique exercise placements for hexagons (latest rank per exercise)
@@ -293,9 +297,16 @@ export default function HomeScreen() {
               <View style={styles.hexagonGrid}>
                 {[...Array(10)].map((_, index) => {
                   const placement = latestPlacements[index];
-                  const hexColors = placement
-                    ? RANK_COLORS[placement.rank_key] || RANK_COLORS.UNRANKED
-                    : undefined;
+                  let hexColors: [string, string] | undefined;
+
+                  if (placement) {
+                    const rank = RANKS.find(
+                      (r) => r.key === placement.rank_key
+                    );
+                    if (rank) {
+                      hexColors = getRankGradient(rank.color);
+                    }
+                  }
 
                   return (
                     <View key={index} style={styles.hexagonItem}>
@@ -340,8 +351,10 @@ export default function HomeScreen() {
                 <Text style={styles.historyDate}>{date}</Text>
 
                 {groupedHistory[date].map((placement) => {
-                  const colors =
-                    RANK_COLORS[placement.rank_key] || RANK_COLORS.UNRANKED;
+                  const rank = RANKS.find((r) => r.key === placement.rank_key);
+                  const colors = rank
+                    ? getRankGradient(rank.color)
+                    : getRankGradient("#4B5563");
 
                   return (
                     <TouchableOpacity
