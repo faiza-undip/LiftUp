@@ -398,6 +398,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#050814",
+    marginBottom: 60,
   },
   scrollContent: {
     padding: 24,
@@ -510,7 +511,6 @@ const styles = StyleSheet.create({
   },
   historySection: {
     marginTop: 8,
-    marginBottom: 60,
   },
   historyTitle: {
     color: "white",

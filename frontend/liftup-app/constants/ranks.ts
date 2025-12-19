@@ -24,4 +24,5 @@ export const RANKS = [
   { key: "WOOD_III", label: "Wood III", color: "#8B4513" },
   { key: "WOOD_II", label: "Wood II", color: "#8B4513" },
   { key: "WOOD_I", label: "Wood I", color: "#8B4513" },
+  { key: "UNRANKED", label: "Unranked", color: "#4B5563" },
 ];
